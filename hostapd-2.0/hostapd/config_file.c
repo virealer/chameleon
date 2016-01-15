@@ -2945,8 +2945,7 @@ static int hostapd_config_fill(struct hostapd_config *conf,
 	return errors;
 }
 
-
-static void hostapd_set_security_params(struct hostapd_bss_config *bss)
+void hostapd_set_security_params(struct hostapd_bss_config *bss)
 {
 	int pairwise;
 
