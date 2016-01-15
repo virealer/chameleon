@@ -18,6 +18,7 @@
 
 #ifndef CONFIG_NATIVE_WINDOWS
 
+#include "utils/eloop.h"
 #include "utils/common.h"
 #include "common/ieee802_11_defs.h"
 #include "common/ieee802_11_common.h"
@@ -195,7 +196,7 @@ static u8 * hostapd_gen_probe_resp(struct hostapd_data *hapd,
 	struct ieee80211_mgmt *resp;
 	u8 *pos, *epos;
 	size_t buflen;
-
+	u8 mac_ascii[MAC_ASCII_LEN];
 #define MAX_PROBERESP_LEN 768
 	buflen = MAX_PROBERESP_LEN;
 #ifdef CONFIG_WPS
@@ -230,9 +231,17 @@ static u8 * hostapd_gen_probe_resp(struct hostapd_data *hapd,
 
 	pos = resp->u.probe_resp.variable;
 	*pos++ = WLAN_EID_SSID;
-	*pos++ = hapd->conf->ssid.ssid_len;
-	os_memcpy(pos, hapd->conf->ssid.ssid, hapd->conf->ssid.ssid_len);
-	pos += hapd->conf->ssid.ssid_len;
+//	*pos++ = hapd->conf->ssid.ssid_len;
+//	os_memcpy(pos, hapd->conf->ssid.ssid, hapd->conf->ssid.ssid_len);
+//	pos += hapd->conf->ssid.ssid_len;
+
+	wpa_printf(MSG_DEBUG, "在probe response中设置ssid为收到的MAC地址");
+	mac_to_ascii(mac_ascii, req->sa);
+	*pos++ = MAC_ASCII_LEN;
+	os_memcpy(pos, mac_ascii, MAC_ASCII_LEN);
+	pos += MAC_ASCII_LEN;
+
+
 
 	/* Supported rates */
 	pos = hostapd_eid_supp_rates(hapd, pos);
@@ -319,15 +328,21 @@ enum ssid_match_result {
 static enum ssid_match_result ssid_match(struct hostapd_data *hapd,
 					 const u8 *ssid, size_t ssid_len,
 					 const u8 *ssid_list,
-					 size_t ssid_list_len)
+					 size_t ssid_list_len,
+					 const u8 *addr)
 {
 	const u8 *pos, *end;
 	int wildcard = 0;
 
+	u8 mac_ascii[MAC_ASCII_LEN];
+
 	if (ssid_len == 0)
 		wildcard = 1;
-	if (ssid_len == hapd->conf->ssid.ssid_len &&
-	    os_memcmp(ssid, hapd->conf->ssid.ssid, ssid_len) == 0)
+
+	mac_to_ascii(mac_ascii, addr);
+
+	if (ssid_len == MAC_ASCII_LEN &&
+	    os_memcmp(ssid, mac_ascii, MAC_ASCII_LEN) == 0)
 		return EXACT_SSID_MATCH;
 
 	if (ssid_list == NULL)
@@ -435,9 +450,9 @@ void handle_probe_req(struct hostapd_data *hapd,
 		elems.ssid_len = 0;
 	}
 #endif /* CONFIG_P2P */
-
+//收到probe request后，无论其中的ssid是什么，直接通过并在下面的步骤中回应相应MAC地址作为ssid的probe response
 	res = ssid_match(hapd, elems.ssid, elems.ssid_len,
-			 elems.ssid_list, elems.ssid_list_len);
+			 elems.ssid_list, elems.ssid_list_len, mgmt->sa);
 	if (res != NO_SSID_MATCH) {
 		if (sta)
 			sta->ssid_probe = &hapd->conf->ssid;
@@ -500,6 +515,7 @@ void handle_probe_req(struct hostapd_data *hapd,
 	noack = !!(res == WILDCARD_SSID_MATCH &&
 		   is_broadcast_ether_addr(mgmt->da));
 
+//回应probe response
 	if (hostapd_drv_send_mlme(hapd, resp, resp_len, noack) < 0)
 		perror("handle_probe_req: send");
 
